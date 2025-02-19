@@ -335,6 +335,30 @@ class SmartFilter
                 });
             }
         }
+
+        foreach ($resultItem as &$item) {
+            if ($item['propertyType'] === 'L') {
+                $propertyId = $item['id'];
+                $currentValuesIds = array_column($item['values'], 'urlId');
+                $enums = CIBlockPropertyEnum::GetList(
+                    ['SORT' => 'ASC'],
+                    ['PROPERTY_ID' => $propertyId]
+                );
+                while ($enum = $enums->Fetch()) {
+                    $value = $enum['VALUE'];
+                    $htmlKey = htmlspecialcharsbx($value);
+
+                    if (!in_array(toLower($enum['XML_ID']), $currentValuesIds)) {
+                        $item['values'][$htmlKey] = [
+                            'value' => $value,
+                            'urlId' => toLower($enum['XML_ID']),
+                            'count' => 0,
+                            'facetValue' => $enum['ID'],
+                        ];
+                    }
+                }
+            }
+        }
     }
 
     public function fillItemValues(&$resultItem, $arProperty)
