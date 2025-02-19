@@ -43,7 +43,7 @@ class SmartFilter
         }
         $this->facet = new Facet($this->iblockId);
     }
-    
+
     public function setWithPrice(bool $withPrice)
     {
         $this->withPrice = $withPrice;
@@ -72,12 +72,14 @@ class SmartFilter
                 } else {
                     if (in_array($fieldConfig->getPropertyType(), ['L', 'E'])) {
                         $newValues = [];
-                        foreach ($fieldConfig->getValues() as $fieldValue) {
-                            if ($fieldValue['urlId'] === $value || $fieldValue['value'] === $value) {
-                                if ($fieldConfig->getPropertyType() == 'E') {
-                                    $newValues[] = $fieldValue['urlId'];
-                                } else {
-                                    $newValues[] = $fieldValue['facetValue'];
+                        foreach ($value as $valueSelectedItem) {
+                            foreach ($fieldConfig->getValues() as $fieldValue) {
+                                if ($fieldValue['urlId'] === $valueSelectedItem || $fieldValue['value'] === $valueSelectedItem) {
+                                    if ($fieldConfig->getPropertyType() == 'E') {
+                                        $newValues[] = $fieldValue['urlId'];
+                                    } else {
+                                        $newValues[] = $fieldValue['facetValue'];
+                                    }
                                 }
                             }
                         }
@@ -160,7 +162,7 @@ class SmartFilter
         while ($rowData = $res->fetch()) {
             $facetId = $rowData["FACET_ID"];
 
-            if (Storage::isPropertyId($facetId)) {
+            if (1) {
                 $PID = Storage::facetIdToPropertyId($facetId);
 
                 if (!array_key_exists($PID, $result))
@@ -279,17 +281,17 @@ class SmartFilter
             $PID = $row['PID'];
 
             if ($resultItem[$PID]["propertyType"] == "L") {
-				$addedKey = $this->fillItemValues($resultItem[$PID], $row["VALUE"], true);
-				
+                $addedKey = $this->fillItemValues($resultItem[$PID], $row["VALUE"], true);
+
                 if ($addedKey <> '') {
                     $resultItem[$PID]["values"][$addedKey]["facetValue"] = $row["VALUE"];
                     $resultItem[$PID]["values"][$addedKey]["count"] = $row["ELEMENT_COUNT"];
                 }
-				
+
                 if ($resultItem[$PID]["values"][$addedKey]["value"] == '') {
                     unset($resultItem[$PID]["values"][$addedKey]);
                 }
-			} elseif ($resultItem[$PID]["propertyType"] == "N") {
+            } elseif ($resultItem[$PID]["propertyType"] == "N") {
                 $this->fillItemValues($resultItem[$PID], $row["MIN_VALUE_NUM"]);
                 $this->fillItemValues($resultItem[$PID], $row["MAX_VALUE_NUM"]);
             } elseif ($resultItem[$PID]["displayType"] == "U") {
