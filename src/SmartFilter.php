@@ -337,7 +337,7 @@ class SmartFilter
         }
 
         foreach ($resultItem as &$item) {
-            if (in_array($item['propertyType'], ['L', 'S'])) {
+            if ($item['propertyType'] === 'L') {
                 $propertyId = $item['id'];
                 $currentValuesIds = array_column($item['values'], 'urlId');
                 $enums = CIBlockPropertyEnum::GetList(
