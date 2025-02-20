@@ -738,7 +738,7 @@ class SmartFilter
             "CHECK_PERMISSIONS" => "Y",
         );
 
-        $link = CIBlockSection::GetList(array(), $arLinkFilter, false, array("ID","IBLOCK_ID","NAME","LEFT_MARGIN","DEPTH_LEVEL","CODE"));
+        $link = \CIBlockSection::GetList(array(), $arLinkFilter, false, array("ID","IBLOCK_ID","NAME","LEFT_MARGIN","DEPTH_LEVEL","CODE"));
         while ($sec = $link->Fetch())
         {
             $this->cache['G'][$sec['ID']] = $sec;
