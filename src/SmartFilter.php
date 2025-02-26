@@ -43,7 +43,7 @@ class SmartFilter
         }
         $this->facet = new Facet($this->iblockId);
     }
-    
+
     public function setWithPrice(bool $withPrice)
     {
         $this->withPrice = $withPrice;
@@ -72,12 +72,14 @@ class SmartFilter
                 } else {
                     if (in_array($fieldConfig->getPropertyType(), ['L', 'E'])) {
                         $newValues = [];
-                        foreach ($fieldConfig->getValues() as $fieldValue) {
-                            if ($fieldValue['urlId'] === $value || $fieldValue['value'] === $value) {
-                                if ($fieldConfig->getPropertyType() == 'E') {
-                                    $newValues[] = $fieldValue['urlId'];
-                                } else {
-                                    $newValues[] = $fieldValue['facetValue'];
+                        foreach ($value as $valueSelectedItem) {
+                            foreach ($fieldConfig->getValues() as $fieldValue) {
+                                if ($fieldValue['urlId'] === $valueSelectedItem || $fieldValue['value'] === $valueSelectedItem) {
+                                    if ($fieldConfig->getPropertyType() == 'E') {
+                                        $newValues[] = $fieldValue['urlId'];
+                                    } else {
+                                        $newValues[] = $fieldValue['facetValue'];
+                                    }
                                 }
                             }
                         }
@@ -150,7 +152,6 @@ class SmartFilter
         $this->sectionId = $sectionId;
 
         $res = $this->facet->query($filter->getResult());
-
         $result = $this->getResultItems();
 
         $dictionaryID = [];
@@ -159,47 +160,26 @@ class SmartFilter
 
         while ($rowData = $res->fetch()) {
             $facetId = $rowData["FACET_ID"];
+            $PID = Storage::facetIdToPropertyId($facetId);
 
-            if (Storage::isPropertyId($facetId)) {
-                $PID = Storage::facetIdToPropertyId($facetId);
+            if (!array_key_exists($PID, $result)) continue;
 
-                if (!array_key_exists($PID, $result))
-                    continue;
+            $rowData['PID'] = $PID;
+            $tmpProperty[] = $rowData;
+            $item = $result[$PID];
+            $arUserType = CIBlockProperty::GetUserType($item['userType']);
 
-                $rowData['PID'] = $PID;
-                $tmpProperty[] = $rowData;
-                $item = $result[$PID];
-                $arUserType = CIBlockProperty::GetUserType($item['userType']);
-
-                if ($item["propertyType"] == "S") {
-                    $dictionaryID[] = $rowData["VALUE"];
-                }
-
-                if ($item["propertyType"] == "E" && $item['USER_TYPE'] == '') {
-                    $elementDictionary[] = $rowData['VALUE'];
-                }
-
-                if ($item["propertyType"] == "G" && $item['USER_TYPE'] == '') {
-                    $sectionDictionary[] = $rowData['VALUE'];
-                }
-
-                if ($item['userType'] == 'directory' && isset($arUserType['GetExtendedValue'])) {
-                    $tableName = $item['userTypeSettings']['TABLE_NAME'];
-                    $directoryPredict[$tableName]['PROPERTY'] = array(
-                        'PID' => $item['id'],
-                        'USER_TYPE_SETTINGS' => $item['userTypeSettings'],
-                        'GetExtendedValue' => $arUserType['GetExtendedValue'],
-                    );
-                    $directoryPredict[$tableName]['VALUE'][] = $rowData["VALUE"];
-                }
-            } else {
-                $priceId = Storage::facetIdToPriceId($facetId);
-
-                foreach ($prices as $NAME => $arPrice) {
-                    if ($arPrice["ID"] == $priceId && isset($result[$NAME])) {
-                        $this->fillItemPrices($result[$NAME], $rowData);
-                    }
-                }
+            if ($item["propertyType"] == "S") $dictionaryID[] = $rowData["VALUE"];
+            if ($item["propertyType"] == "E" && $item['USER_TYPE'] == '') $elementDictionary[] = $rowData['VALUE'];
+            if ($item["propertyType"] == "G" && $item['USER_TYPE'] == '') $sectionDictionary[] = $rowData['VALUE'];
+            if ($item['userType'] == 'directory' && isset($arUserType['GetExtendedValue'])) {
+                $tableName = $item['userTypeSettings']['TABLE_NAME'];
+                $directoryPredict[$tableName]['PROPERTY'] = [
+                    'PID' => $item['id'],
+                    'USER_TYPE_SETTINGS' => $item['userTypeSettings'],
+                    'GetExtendedValue' => $arUserType['GetExtendedValue'],
+                ];
+                $directoryPredict[$tableName]['VALUE'][] = $rowData["VALUE"];
             }
         }
 
@@ -208,7 +188,7 @@ class SmartFilter
         $this->processProperties($result, $tmpProperty, $dictionaryID, $directoryPredict);
 
         $configFilter = new ConfigFilter();
-        foreach ($result as $key => $value) {
+        foreach ($result as $value) {
             if (isset($value['values']['min']) || isset($value['values']['max'])) {
                 $filterRange = new ConfigFilterRange();
                 $filterRange->setIblockId($value['iblockId']);
@@ -228,8 +208,39 @@ class SmartFilter
                 $filterList->setHint(htmlspecialchars_decode($value['hint']));
                 $filterList->setPropertyType($value['propertyType']);
                 $filterList->setDisplayType($value['displayType']);
-                $filterList->setValues(array_values($value['values']));
+
+                $updatedValues = [];
+                foreach ($value['values'] as $val) {
+                    $updatedValues[] = $val;
+                }
+                $filterList->setValues($updatedValues);
                 $configFilter->addFilterItem($filterList);
+            }
+        }
+
+        foreach ($configFilter->getConfig() as $filterItem) {
+            if ($filterItem instanceof ConfigFilterList) {
+                $updatedValues = [];
+                foreach ($filterItem->getValues() as $val) {
+                    $tempFilter = clone $filter;
+                    if ($filterItem->getPropertyType() == 'L') {
+                        $tempFilter->eq('PROPERTY_' . $filterItem->getCode(), $val['facetValue']);
+                    } else {
+                        $tempFilter->eq('PROPERTY_' . $filterItem->getCode(), $val['value']);
+                    }
+
+                    $facetRes = $this->facet->query($tempFilter->getResult());
+                    $newCount = 0;
+                    while ($row = $facetRes->fetch()) {
+                        if ($row['VALUE'] == $val['facetValue']) {
+                            $newCount = $row['ELEMENT_COUNT'];
+                            break;
+                        }
+                    }
+                    $val['count'] = (string)$newCount;
+                    $updatedValues[] = $val;
+                }
+                $filterItem->setValues($updatedValues);
             }
         }
 
@@ -258,71 +269,83 @@ class SmartFilter
             $lookupDictionary = $this->facet->getDictionary()->getStringByIds($dictionaryID);
         }
 
-        if (!empty($directoryPredict)) {
-            foreach ($directoryPredict as $directory) {
-                if (empty($directory['VALUE']) || !is_array($directory['VALUE']))
-                    continue;
-                $values = [];
-                foreach ($directory['VALUE'] as $item) {
-                    if (isset($lookupDictionary[$item]))
-                        $values[] = $lookupDictionary[$item];
-                }
+        $baseFilter = Filter::create()
+            ->eq('ACTIVE', 'Y')
+            ->eq('SECTION_ID', $this->sectionId);
+        $baseFacetResult = $this->facet->query($baseFilter->getResult());
+        $baseValues = [];
 
-                if (!empty($values))
-                    $this->predictHlFetch($directory['PROPERTY'], $values);
-                unset($values);
+        while ($row = $baseFacetResult->fetch()) {
+            $PID = \Bitrix\Iblock\PropertyIndex\Storage::facetIdToPropertyId($row['FACET_ID']);
+            if (isset($resultItem[$PID]) && $resultItem[$PID]['propertyType'] === 'S') {
+                $value = $this->facet->getDictionary()->getStringById($row['VALUE']);
+                if ($value) {
+                    $baseValues[$PID][$value] = $row['VALUE'];
+                }
             }
-            unset($directory);
         }
 
         foreach ($elements as $row) {
             $PID = $row['PID'];
+            if (!isset($resultItem[$PID])) continue;
 
-            if ($resultItem[$PID]["propertyType"] == "L") {
-				$addedKey = $this->fillItemValues($resultItem[$PID], $row["VALUE"], true);
-				
+            $item = &$resultItem[$PID];
+
+            if ($item["propertyType"] == "L") {
+                $addedKey = $this->fillItemValues($item, $row["VALUE"], true);
                 if ($addedKey <> '') {
-                    $resultItem[$PID]["values"][$addedKey]["facetValue"] = $row["VALUE"];
-                    $resultItem[$PID]["values"][$addedKey]["count"] = $row["ELEMENT_COUNT"];
+                    $item["values"][$addedKey]["facetValue"] = $row["VALUE"];
+                    $item["values"][$addedKey]["count"] = $row["ELEMENT_COUNT"];
                 }
-				
-                if ($resultItem[$PID]["values"][$addedKey]["value"] == '') {
-                    unset($resultItem[$PID]["values"][$addedKey]);
+                if ($item["values"][$addedKey]["value"] == '') {
+                    unset($item["values"][$addedKey]);
                 }
-			} elseif ($resultItem[$PID]["propertyType"] == "N") {
-                $this->fillItemValues($resultItem[$PID], $row["MIN_VALUE_NUM"]);
-                $this->fillItemValues($resultItem[$PID], $row["MAX_VALUE_NUM"]);
-            } elseif ($resultItem[$PID]["displayType"] == "U") {
-                $this->fillItemValues($resultItem[$PID], FormatDate("Y-m-d", $row["MIN_VALUE_NUM"]));
-                $this->fillItemValues($resultItem[$PID], FormatDate("Y-m-d", $row["MAX_VALUE_NUM"]));
-            } elseif ($resultItem[$PID]["displayType"] == "S") {
-                $addedKey = $this->fillItemValues($resultItem[$PID], $lookupDictionary[$row["VALUE"]], true);
-
-                if ($addedKey <> '') {
-                    $resultItem[$PID]["values"][$addedKey]["facetValue"] = $row["VALUE"];
-                    $resultItem[$PID]["values"][$addedKey]["count"] = $row["ELEMENT_COUNT"];
-                }
-
-                if ($resultItem[$PID]["values"][$addedKey]["value"] == '') {
-                    unset($resultItem[$PID]["values"][$addedKey]);
-                }
+            } elseif ($item["propertyType"] == "N") {
+                $this->fillItemValues($item, $row["MIN_VALUE_NUM"]);
+                $this->fillItemValues($item, $row["MAX_VALUE_NUM"]);
+            } elseif ($item["displayType"] == "U") {
+                $this->fillItemValues($item, FormatDate("Y-m-d", $row["MIN_VALUE_NUM"]));
+                $this->fillItemValues($item, FormatDate("Y-m-d", $row["MAX_VALUE_NUM"]));
+            } elseif ($item["propertyType"] == "S") {
+                $value = $lookupDictionary[$row["VALUE"]] ?? $row["VALUE"];
+                $htmlKey = htmlspecialcharsbx($value);
+                $item["values"][$htmlKey] = [
+                    'htmlValue' => 'Y',
+                    'value' => $value,
+                    'urlId' => toLower($value),
+                    'facetValue' => $row["VALUE"],
+                    'count' => $row["ELEMENT_COUNT"],
+                ];
             } else {
-                $addedKey = $this->fillItemValues($resultItem[$PID], $lookupDictionary[$row["VALUE"]], true);
+                $addedKey = $this->fillItemValues($item, $lookupDictionary[$row["VALUE"]], true);
                 if (!$addedKey) {
-                    $addedKey = $this->fillItemValues($resultItem[$PID], $row["VALUE"], true);
+                    $addedKey = $this->fillItemValues($item, $row["VALUE"], true);
                 }
-
                 if ($addedKey <> '') {
-                    $resultItem[$PID]["values"][$addedKey]["facetValue"] = $row["VALUE"];
-                    $resultItem[$PID]["values"][$addedKey]["count"] = $row["ELEMENT_COUNT"];
+                    $item["values"][$addedKey]["facetValue"] = $row["VALUE"];
+                    $item["values"][$addedKey]["count"] = $row["ELEMENT_COUNT"];
                 }
-
-                if ($resultItem[$PID]["values"][$addedKey]["value"] == '') {
-                    unset($resultItem[$PID]["values"][$addedKey]);
+                if ($item["values"][$addedKey]["value"] == '') {
+                    unset($item["values"][$addedKey]);
                 }
             }
+        }
 
-
+        foreach ($resultItem as &$item) {
+            if ($item['propertyType'] === 'S' && isset($baseValues[$item['id']])) {
+                foreach ($baseValues[$item['id']] as $baseValue => $facetValue) {
+                    $htmlKey = htmlspecialcharsbx($baseValue);
+                    if (!isset($item['values'][$htmlKey])) {
+                        $item['values'][$htmlKey] = [
+                            'htmlValue' => 'Y',
+                            'value' => $baseValue,
+                            'urlId' => toLower($baseValue),
+                            'facetValue' => $facetValue,
+                            'count' => 0,
+                        ];
+                    }
+                }
+            }
         }
 
         foreach ($resultItem as &$item) {
@@ -331,6 +354,27 @@ class SmartFilter
                 uasort($item["values"], static function ($a, $b) {
                     return ($a["value"] > $b["value"]) ? 1 : -1;
                 });
+            }
+        }
+
+        foreach ($resultItem as &$item) {
+            if ($item['propertyType'] === 'L') {
+                $propertyId = $item['id'];
+                $currentValuesIds = array_column($item['values'], 'urlId');
+                $enums = CIBlockPropertyEnum::GetList(['SORT' => 'ASC'], ['PROPERTY_ID' => $propertyId]);
+                while ($enum = $enums->Fetch()) {
+                    $value = $enum['VALUE'];
+                    $htmlKey = htmlspecialcharsbx($value);
+                    if (!in_array(toLower($enum['XML_ID']), $currentValuesIds)) {
+                        $item['values'][$htmlKey] = [
+                            'htmlValue' => 'Y',
+                            'value' => $value,
+                            'urlId' => toLower($enum['XML_ID']),
+                            'count' => 0,
+                            'facetValue' => $enum['ID'],
+                        ];
+                    }
+                }
             }
         }
     }
@@ -712,7 +756,7 @@ class SmartFilter
             "CHECK_PERMISSIONS" => "Y",
         );
 
-        $link = CIBlockSection::GetList(array(), $arLinkFilter, false, array("ID","IBLOCK_ID","NAME","LEFT_MARGIN","DEPTH_LEVEL","CODE"));
+        $link = \CIBlockSection::GetList(array(), $arLinkFilter, false, array("ID","IBLOCK_ID","NAME","LEFT_MARGIN","DEPTH_LEVEL","CODE"));
         while ($sec = $link->Fetch())
         {
             $this->cache['G'][$sec['ID']] = $sec;
