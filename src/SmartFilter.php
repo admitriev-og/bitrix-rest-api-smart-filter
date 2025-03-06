@@ -213,6 +213,9 @@ class SmartFilter
                 foreach ($value['values'] as $val) {
                     $updatedValues[] = $val;
                 }
+                usort($updatedValues, function ($a, $b) {
+                    return $a['facetValue'] <=> $b['facetValue'];
+                });
                 $filterList->setValues($updatedValues);
                 $configFilter->addFilterItem($filterList);
             }
@@ -237,7 +240,7 @@ class SmartFilter
                             break;
                         }
                     }
-                    $val['count'] = (string)$newCount;
+                    $val['count'] = (int)$newCount;
                     $updatedValues[] = $val;
                 }
                 $filterItem->setValues($updatedValues);
@@ -314,7 +317,7 @@ class SmartFilter
                     'value' => $value,
                     'urlId' => toLower($value),
                     'facetValue' => $row["VALUE"],
-                    'count' => $row["ELEMENT_COUNT"],
+                    'count' => (int)$row["ELEMENT_COUNT"],
                 ];
             } else {
                 $addedKey = $this->fillItemValues($item, $lookupDictionary[$row["VALUE"]], true);
