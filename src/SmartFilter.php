@@ -228,6 +228,8 @@ class SmartFilter
                     $tempFilter = clone $filter;
                     if ($filterItem->getPropertyType() == 'L') {
                         $tempFilter->eq('PROPERTY_' . $filterItem->getCode(), $val['facetValue']);
+                    } elseif ($filterItem->getPropertyType() == 'E') {
+                        $tempFilter->eq('PROPERTY_' . $filterItem->getCode(), $val['facetValue']);
                     } else {
                         $tempFilter->eq('PROPERTY_' . $filterItem->getCode(), $val['value']);
                     }
@@ -235,7 +237,13 @@ class SmartFilter
                     $facetRes = $this->facet->query($tempFilter->getResult());
                     $newCount = 0;
                     while ($row = $facetRes->fetch()) {
-                        if ($row['VALUE'] == $val['facetValue']) {
+                        if ($filterItem->getPropertyType() == 'E' && $row['VALUE'] == $val['facetValue']) {
+                            $newCount = $row['ELEMENT_COUNT'];
+                            break;
+                        } elseif ($filterItem->getPropertyType() == 'L' && $row['VALUE'] == $val['facetValue']) {
+                            $newCount = $row['ELEMENT_COUNT'];
+                            break;
+                        } elseif ($row['VALUE'] == $val['value']) {
                             $newCount = $row['ELEMENT_COUNT'];
                             break;
                         }
